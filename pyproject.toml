@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transformer-builder"
+version = "0.1.0"
+description = "A GPT built step by step, following Build a Large Language Model (From Scratch), with an interactive visualization app"
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.0",
+    "tiktoken>=0.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["transformer_builder"]
