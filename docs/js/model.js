@@ -13,9 +13,11 @@ const Model = {
 
   // ids: array of token ids, length <= context_length.
   // Returns the full trace of intermediates.
-  forward(ids) {
-    const W = MODEL_WEIGHTS;
+  // Pass a different weight set (e.g. DIFFUSION_WEIGHTS) to run its model;
+  // config.causal === false disables the causal mask (bidirectional).
+  forward(ids, W = MODEL_WEIGHTS) {
     const cfg = W.config;
+    const causal = cfg.causal !== false;
     const n = ids.length;
 
     const tokEmb = ids.map((id) => W.tok_emb[id].slice());
@@ -41,9 +43,9 @@ const Model = {
         const sl = (M) => M.map((row) => row.slice(h * hd, (h + 1) * hd));
         const q = sl(b.q), k = sl(b.k), v = sl(b.v);
         const scores = T.scale(T.matmul(q, T.transpose(k)), 1 / Math.sqrt(hd));
-        const masked = scores.map((row, i) =>
-          row.map((s, j) => (j > i ? -Infinity : s))
-        );
+        const masked = causal
+          ? scores.map((row, i) => row.map((s, j) => (j > i ? -Infinity : s)))
+          : scores;
         const weights = T.softmax(masked);
         const context = T.matmul(weights, v);
         b.heads.push({ q, k, v, scores, masked, weights, context });

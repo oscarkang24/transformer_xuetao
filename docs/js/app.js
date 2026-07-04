@@ -21,10 +21,19 @@ const App = {
     App.state.trace = Model.forward(App.state.ids);
   },
 
+  // Highlight where the data currently is in the model pipeline. Stages
+  // call this again mid-animation as the data moves (e.g. each attention
+  // sub-step, each sampled token).
+  setLineage(key) {
+    const holder = document.getElementById("lineage");
+    holder.replaceChildren(Viz.lineage(key));
+  },
+
   renderStage() {
     const root = document.getElementById("stage-root");
     for (const s of Stages) if (s.cleanup) { s.cleanup(); s.cleanup = null; }
     root.replaceChildren();
+    App.setLineage(Stages[App.state.stage].lineage);
     Stages[App.state.stage].render(root);
 
     document.querySelectorAll("nav.stepper button").forEach((b, i) => {

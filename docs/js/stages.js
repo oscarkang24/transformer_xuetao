@@ -32,6 +32,7 @@ function tokenLabels() {
 Stages.push({
   name: "Tokenize",
   chapter: "Ch. 2",
+  lineage: "tokens",
   render(root) {
     root.append(stageHeader(1, "Tokenize the text", "Chapter 2, §2.2–2.6 — Working with text data",
       "A language model never sees words — it sees integer token IDs. The text is split " +
@@ -63,11 +64,13 @@ Stages.push({
 
     function play() {
       row.replaceChildren();
+      App.setLineage("text");
       App.state.tokens.forEach((t, i) => {
         const c = Viz.chip(t, "pop");
         c.style.animationDelay = `${i * 90}ms`;
         row.append(c);
       });
+      setTimeout(() => App.setLineage("tokens"), App.state.tokens.length * 90 + 350);
     }
     play();
   },
@@ -80,6 +83,7 @@ Stages.push({
 Stages.push({
   name: "Embed",
   chapter: "Ch. 2",
+  lineage: "embed",
   render(root) {
     root.append(stageHeader(2, "Token + positional embeddings", "Chapter 2, §2.7–2.8 — Encoding word positions",
       "Each token ID selects a row of the embedding matrix — a learned 32-dimensional vector. " +
@@ -96,6 +100,8 @@ Stages.push({
 
     function play() {
       viz.replaceChildren();
+      App.setLineage("tokens");
+      setTimeout(() => App.setLineage("embed"), App.state.tokens.length * 260 + 220);
       const tbl = Viz.el("table", { class: "emb-table" });
       tbl.append(Viz.el("tr", {},
         Viz.el("th"), Viz.el("th", { text: "token embedding  tok_emb[id]" }),
@@ -137,6 +143,7 @@ Stages.push({
 Stages.push({
   name: "Attention",
   chapter: "Ch. 3",
+  lineage: "qkv",
   render(root) {
     root.append(stageHeader(3, "Causal self-attention, step by step",
       "Chapter 3, §3.4–3.5 — From simple to causal attention",
@@ -215,6 +222,7 @@ Stages.push({
       btnPrev.disabled = step === 0;
       btnNext.disabled = step === nSteps - 1;
       [...dots.children].forEach((d, i) => d.classList.toggle("on", i <= step));
+      App.setLineage(["embed", "qkv", "attention", "attention", "attention", "attention"][step]);
       caption.textContent = captions[step];
       formula.innerHTML =
         `context = ${fPart(4, "softmax")}( ${fPart(2, "Q·Kᵀ / √d_k")} ${fPart(3, "+ mask")} ) ${fPart(5, "· V")}` +
@@ -342,6 +350,7 @@ Stages.push({
 Stages.push({
   name: "Multi-head",
   chapter: "Ch. 3",
+  lineage: "multihead",
   render(root) {
     root.append(stageHeader(4, "Multi-head attention", "Chapter 3, §3.6 — Extending single-head to multi-head",
       "Instead of one attention pattern, the 32 dimensions are split into 4 heads of 8, " +
@@ -435,6 +444,7 @@ Stages.push({
 Stages.push({
   name: "Block",
   chapter: "Ch. 4",
+  lineage: "block",
   render(root) {
     root.append(stageHeader(5, "Inside a transformer block", "Chapter 4, §4.5–4.6 — Shortcut connections and the block",
       "A block wires the pieces together: layer norm → masked multi-head attention → " +
@@ -553,6 +563,8 @@ Stages.push({
         }
         const id = order[i];
         const node = nodes.find((n) => n.id === id);
+        if (id === "mha") App.setLineage("multihead");
+        else if (id === "ffn") App.setLineage("block");
         nodeEls[id].classList.add("hot");
         animatePulse(+pulse.getAttribute("cy"), node.y, stepDur * 0.7);
         if (id in cpAt) drawStrips(cpAt[id]);
@@ -583,6 +595,7 @@ Stages.push({
 Stages.push({
   name: "Generate",
   chapter: "Ch. 5",
+  lineage: "logits",
   render(root) {
     root.append(stageHeader(6, "Generate, one token at a time",
       "Chapter 5, §5.1 & 5.3 — Decoding strategies: temperature and top-k",
@@ -698,11 +711,13 @@ Stages.push({
     function stepOnce() {
       currentDistribution();
       const id = Model.sample(lastProbs);
+      App.setLineage("sample");
       drawBars(id);
       setTimeout(() => {
         seq.push({ word: Model.vocab()[id], token: Model.vocab()[id], id, unk: false });
         drawChips(seq.length - 1);
         refresh();
+        App.setLineage("logits");
       }, 620);
     }
 
@@ -731,5 +746,193 @@ Stages.push({
     refresh();
 
     this.cleanup = () => { if (autoTimer) toggleAuto(); };
+  },
+});
+
+// ===========================================================================
+// Stage 7 — Autoregressive vs. diffusion, side by side
+// ===========================================================================
+
+Stages.push({
+  name: "AR vs Diffusion",
+  chapter: "Beyond",
+  lineage: "sample",
+  render(root) {
+    root.append(stageHeader(7, "Two ways to generate: autoregressive vs. diffusion",
+      "Beyond the book — the same transformer, two generation recipes",
+      "The GPT you just built writes left-to-right, one token per forward pass, each " +
+      "conditioned on the prefix. A diffusion language model starts from pure noise — " +
+      "every position masked — and refines the whole sequence in parallel, committing " +
+      "its most confident predictions each round. The right panel is a real second " +
+      "model: the identical architecture trained on the identical corpus, but with the " +
+      "causal mask removed and a mask-and-reconstruct objective instead of next-token " +
+      "prediction. Press Race and watch both write a 12-token sequence."));
+
+    const L = 12;               // sequence length both sides generate
+    const TEMP = 0.8;
+    const maskId = DIFFUSION_WEIGHTS.mask_id;
+    const vocab = Model.vocab();
+    const dotId = vocab.indexOf(".");
+
+    let rounds = 6;
+    let timer = null;
+
+    const roundsSel = Viz.el("select", {
+      onchange: (e) => { rounds = +e.target.value; reset(); },
+    });
+    [3, 4, 6, 8, 12].forEach((k) => roundsSel.append(
+      Viz.el("option", { value: k, text: `${k} rounds`, selected: k === rounds ? "" : null })));
+
+    const raceBtn = Viz.el("button", { class: "btn", text: "▶ Race", onclick: race });
+    const resetBtn = Viz.el("button", { class: "btn secondary", text: "↺ Reset", onclick: reset });
+    root.append(Viz.el("div", { class: "controls" },
+      raceBtn, resetBtn,
+      Viz.el("span", { class: "spacer" }),
+      Viz.el("label", { text: "diffusion refinement:" }), roundsSel));
+
+    // --- panels ---
+    function panel(title, sub) {
+      const row = Viz.el("div", { class: "chip-row" });
+      const status = Viz.el("div", { class: "gen-note", text: " " });
+      const card = Viz.el("div", { class: "race-card" },
+        Viz.el("div", { class: "mat-title", text: title }),
+        Viz.el("div", { class: "race-sub", text: sub }),
+        row, status);
+      return { card, row, status };
+    }
+
+    const arP = panel("Autoregressive — the GPT from stages 1–6",
+      "one forward pass per token · sees only the past (causal mask)");
+    const dfP = panel("Discrete diffusion — bidirectional twin",
+      "one forward pass per round · predicts every position at once, keeps the most confident");
+    root.append(Viz.el("div", { class: "gen-layout" }, arP.card, dfP.card));
+
+    root.append(footnote(
+      "Both panels are real inference. The diffusion twin is trained by " +
+      "<code>scripts/export_diffusion_model.py</code>: random fractions of each training " +
+      "window are replaced by <code>&lt;|mask|&gt;</code> (the discrete analogue of adding " +
+      "noise) and the model learns to reconstruct them — so at generation time it can start " +
+      "from all-masked “static” and denoise. Image models like Stable Diffusion follow the " +
+      "same recipe with Gaussian noise on pixels; MaskGIT and LLaDA do exactly this with text. " +
+      "Note what the causal GPT never could: the diffusion model uses context from " +
+      "<em>both directions</em> to fill each slot."));
+
+    // --- state ---
+    let arIds, arDone, dfState, dfCommitted, dfRound, calls;
+
+    function randomWord() {
+      return vocab[Math.floor(Math.random() * (vocab.length - 1))];
+    }
+
+    function drawAR(flashLast = false) {
+      arP.row.replaceChildren();
+      arIds.slice(1).forEach((id, i) => {   // hide the "." seed context
+        const c = Viz.chip({ token: vocab[id], id, unk: false }, "gen");
+        if (flashLast && i === arIds.length - 2) c.classList.add("pop", "flash");
+        arP.row.append(c);
+      });
+      for (let i = arIds.length - 1; i < L; i++) {
+        arP.row.append(Viz.el("div", { class: "chip slot" }, Viz.el("span", { text: "·" })));
+      }
+      arP.status.textContent = arDone
+        ? `done — ${calls.ar} forward passes, 1 new token each`
+        : `forward passes: ${calls.ar} / ${L}`;
+    }
+
+    function drawDF(justCommitted = []) {
+      dfP.row.replaceChildren();
+      dfState.forEach((id, i) => {
+        if (dfCommitted[i]) {
+          const c = Viz.chip({ token: vocab[id], id, unk: false }, "gen");
+          if (justCommitted.includes(i)) c.classList.add("pop", "flash");
+          dfP.row.append(c);
+        } else {
+          // still "noise": a random word, blurred — re-rolled every round
+          dfP.row.append(Viz.el("div", { class: "chip noise" },
+            Viz.el("span", { text: randomWord() }),
+            Viz.el("span", { class: "id", text: "?" })));
+        }
+      });
+      const left = dfCommitted.filter((c) => !c).length;
+      dfP.status.textContent = left === 0
+        ? `done — ${calls.df} forward passes, all ${L} positions predicted each time`
+        : `forward passes: ${calls.df} / ${rounds} · still masked: ${left}`;
+    }
+
+    function reset() {
+      clearTimeout(timer);
+      timer = null;
+      raceBtn.disabled = false;
+      arIds = [dotId];            // sentence-boundary context to start from
+      arDone = false;
+      dfState = new Array(L).fill(maskId);
+      dfCommitted = new Array(L).fill(false);
+      dfRound = 0;
+      calls = { ar: 0, df: 0 };
+      drawAR();
+      drawDF();
+    }
+
+    function arStep() {
+      const ctx = arIds.slice(-Model.cfg().context_length);
+      const trace = Model.forward(ctx);
+      const logits = trace.logits[trace.logits.length - 1];
+      const probs = Model.nextTokenDistribution(logits, TEMP, 8);
+      arIds.push(Model.sample(probs));
+      calls.ar += 1;
+      arDone = arIds.length - 1 >= L;
+      drawAR(true);
+    }
+
+    function dfStep() {
+      dfRound += 1;
+      calls.df += 1;
+      const trace = Model.forward(dfState, DIFFUSION_WEIGHTS);
+
+      // Sample a candidate for every still-masked position, in parallel.
+      const cands = [];
+      dfState.forEach((_, i) => {
+        if (dfCommitted[i]) return;
+        const logits = trace.logits[i].slice();
+        logits[maskId] = -Infinity;             // never emit the mask token
+        const probs = T.softmaxRow(logits.map((l) => l / TEMP));
+        const tok = Model.sample(probs);
+        cands.push({ i, tok, conf: probs[tok] });
+      });
+
+      // Cosine schedule (MaskGIT): how many positions may remain masked.
+      const targetMasked = dfRound >= rounds
+        ? 0
+        : Math.round(L * Math.cos((Math.PI / 2) * (dfRound / rounds)));
+      const nCommit = Math.max(1, cands.length - targetMasked);
+      cands.sort((a, b) => b.conf - a.conf);
+      const justCommitted = [];
+      cands.slice(0, nCommit).forEach(({ i, tok }) => {
+        dfState[i] = tok;
+        dfCommitted[i] = true;
+        justCommitted.push(i);
+      });
+      drawDF(justCommitted);
+    }
+
+    function race() {
+      reset();
+      raceBtn.disabled = true;
+      const tick = () => {
+        const arBusy = !arDone;
+        const dfBusy = dfCommitted.some((c) => !c);
+        if (!arBusy && !dfBusy) {
+          raceBtn.disabled = false;
+          return;
+        }
+        if (arBusy) arStep();
+        if (dfBusy) dfStep();
+        timer = setTimeout(tick, 950);
+      };
+      tick();
+    }
+
+    reset();
+    this.cleanup = () => clearTimeout(timer);
   },
 });

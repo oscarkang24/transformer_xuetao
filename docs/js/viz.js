@@ -79,6 +79,7 @@ const Viz = {
       ? document.createElementNS("http://www.w3.org/2000/svg", tag)
       : document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) {
+      if (v == null) continue;   // allow conditional attrs like {selected: cond ? "" : null}
       if (k === "class") node.setAttribute("class", v);
       else if (k === "text") node.textContent = v;
       else if (k === "html") node.innerHTML = v;
@@ -213,6 +214,41 @@ const Viz = {
     cells.forEach((c) => c.classList.add("pending"));
     cells.forEach((c, i) => setTimeout(() => c.classList.remove("pending"), i * perCell));
     return cells.length * perCell;
+  },
+
+  // --- lineage trail ---------------------------------------------------
+  // The full journey of a word through the model. Each stage (and each
+  // animation step inside a stage) marks where the data currently is;
+  // everything to the left is already computed, everything to the right
+  // is still to come. Pills are clickable shortcuts to their stage.
+
+  LINEAGE: [
+    { key: "text",      label: "text",        stage: 0 },
+    { key: "tokens",    label: "token IDs",   stage: 0 },
+    { key: "embed",     label: "embeddings",  stage: 1 },
+    { key: "qkv",       label: "Q·K·V",       stage: 2 },
+    { key: "attention", label: "attention",   stage: 2 },
+    { key: "multihead", label: "multi-head",  stage: 3 },
+    { key: "block",     label: "block ×2",    stage: 4 },
+    { key: "logits",    label: "logits",      stage: 5 },
+    { key: "sample",    label: "next token",  stage: 5 },
+  ],
+
+  lineage(activeKey) {
+    const bar = Viz.el("div", { class: "lineage", role: "navigation",
+      "aria-label": "Where the data is in the model" });
+    const activeIdx = Viz.LINEAGE.findIndex((n) => n.key === activeKey);
+    Viz.LINEAGE.forEach((n, i) => {
+      if (i > 0) bar.append(Viz.el("span", { class: "ln-arrow", text: "→" }));
+      const cls = i < activeIdx ? "done" : i === activeIdx ? "on" : "todo";
+      bar.append(Viz.el("button", {
+        class: `ln ${cls}`,
+        text: n.label,
+        title: `go to stage ${n.stage + 1}`,
+        onclick: () => App.goto(n.stage),
+      }));
+    });
+    return bar;
   },
 
   legendRamp(kind, leftLabel, rightLabel) {

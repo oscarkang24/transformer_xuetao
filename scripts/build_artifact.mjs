@@ -28,7 +28,7 @@ const body = html
   .replace(/\s*<script src="[^"]+"><\/script>/g, "");
 
 const css = read("css/style.css");
-const scripts = ["js/weights.js", "js/tensor.js", "js/tokenizer.js",
+const scripts = ["js/weights.js", "js/weights_diffusion.js", "js/tensor.js", "js/tokenizer.js",
   "js/model.js", "js/viz.js", "js/stages.js", "js/app.js"]
   .map(read)
   .join("\n;\n");

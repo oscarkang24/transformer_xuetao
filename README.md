@@ -21,8 +21,9 @@ Open `docs/index.html` in a browser (no build step, no server needed), or serve 
 | 4 · Multi-head | four heads attending differently, concat + output projection | Ch. 3 §3.6 |
 | 5 · Block | animated data flow through LayerNorm → MHA → shortcut → FFN → shortcut | Ch. 4 §4.5–4.6 |
 | 6 · Generate | autoregressive sampling with live temperature and top-k controls | Ch. 5 §5.1, §5.3 |
+| 7 · AR vs Diffusion | the GPT races a real discrete-diffusion twin (same architecture, causal mask removed, mask-and-reconstruct training) generating side by side | beyond the book |
 
-Type any prompt from the toy vocabulary (stage 1 lists it) and watch the whole pipeline recompute.
+A lineage trail (text → token IDs → embeddings → Q·K·V → attention → multi-head → block → logits → next token) tracks where the data is at every animation step. Type any prompt from the toy vocabulary (stage 1 lists it) and watch the whole pipeline recompute.
 
 ## The PyTorch code
 
@@ -49,8 +50,9 @@ python scripts/pretrain_demo.py --epochs 10
 ### Retrain and re-export the web app's toy model
 
 ```bash
-python scripts/export_toy_model.py    # trains + writes docs/js/weights.js
-node scripts/verify_js_model.mjs      # checks JS inference matches PyTorch
+python scripts/export_toy_model.py        # trains + writes docs/js/weights.js
+python scripts/export_diffusion_model.py  # trains the bidirectional diffusion twin (stage 7)
+node scripts/verify_js_model.mjs          # checks JS inference matches PyTorch (both models)
 ```
 
 The verify script runs the browser-side forward pass in Node and compares its logits against reference logits baked in at export time (they agree to ~1e-4, the weight-rounding tolerance).
