@@ -92,16 +92,25 @@ const App = {
       const next = cur === "" ? "light" : cur === "light" ? "dark" : "";
       if (next) document.documentElement.dataset.theme = next;
       else delete document.documentElement.dataset.theme;
-      themeBtn.textContent = labels[next];
-      App.renderStage(); // re-render so JS-computed colors follow the theme
+      // the data-theme MutationObserver below re-renders and relabels
     });
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
       if (!document.documentElement.dataset.theme) App.renderStage();
     });
+    // A host page (e.g. an artifact viewer) may stamp data-theme on the root
+    // itself — re-render so JS-computed colors follow along.
+    new MutationObserver(() => {
+      themeBtn.textContent = labels[document.documentElement.dataset.theme || ""];
+      App.renderStage();
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
     App.recompute();
     App.renderStage();
   },
 };
 
-document.addEventListener("DOMContentLoaded", App.init);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", App.init);
+} else {
+  App.init();
+}
